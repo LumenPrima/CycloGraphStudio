@@ -42,6 +42,11 @@ The project is organized into backend and frontend directories:
    npm install
    ```
 
+3. Install additional Babel plugin:
+   ```
+   npm install --save-dev @babel/plugin-proposal-private-property-in-object
+   ```
+
 ## Running the Application
 
 To run both the backend and frontend servers simultaneously, use the provided script:
@@ -78,6 +83,7 @@ If you encounter any issues while setting up or running the application, please 
 1. Ensure that you have the correct versions of Python and Node.js installed.
 2. Make sure all dependencies are correctly installed for both backend and frontend.
 3. Check that you're in the correct directory when running commands.
+4. If you encounter a Babel-related error mentioning "@babel/plugin-proposal-private-property-in-object", make sure you've run the additional npm install command in the Frontend Setup section.
 
 For more detailed error messages, you can run the backend and frontend servers separately:
 
