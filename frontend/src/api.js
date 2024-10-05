@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = 'http://localhost:5002/api';
 
 export const generatePattern = async (design) => {
   const response = await fetch(`${API_BASE_URL}/generate`, {

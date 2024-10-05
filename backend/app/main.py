@@ -26,8 +26,12 @@ def generate():
     try:
         data = request.json
         print(f"Received data: {data}")  # Debug print
+        
+        # Extract path type (inside or outside) from the request, default to 'outside'
+        path_type = data.get('path_type', 'outside')
+        
         design = convert_design_data(data)
-        pattern = generate_pattern(design)
+        pattern = generate_pattern(design, path_type=path_type)
         return jsonify(pattern.to_dict())
     except ValueError as e:
         print(f"Error in generate: {str(e)}")  # Debug print
@@ -174,6 +178,7 @@ def convert_design_data(data):
     )
 
 if __name__ == '__main__':
-    print("Starting Flask app...")  # Debug print
-    app.run(debug=True, port=5001)
+    port = int(os.environ.get('FLASK_PORT', 5001))
+    print(f"Starting Flask app on port {port}...")  # Debug print
+    app.run(debug=True, port=port)
     print("Flask app has stopped.")  # Debug print
