@@ -20,7 +20,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # Set the Flask port
-export FLASK_PORT=5002
+export FLASK_PORT=5001
 
 # Start the backend Flask server
 echo "Starting Flask app..."

@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:5002/api';
+const API_BASE_URL = 'http://localhost:5001/api';
 
 export const generatePattern = async (design) => {
   const response = await fetch(`${API_BASE_URL}/generate`, {
@@ -80,18 +80,23 @@ export const exportPNG = async (design) => {
   return response.blob();
 };
 
-export const exportGCode = async (design) => {
-  const response = await fetch(`${API_BASE_URL}/export/gcode`, {
+// Updated exportGCode function to accept options
+export const exportGCode = async (design, gcodeOptions) => {
+  const response = await fetch('/api/export-gcode', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json'
     },
-    body: JSON.stringify(design),
+    body: JSON.stringify({
+      design,
+      ...gcodeOptions
+    })
   });
 
   if (!response.ok) {
     throw new Error('Failed to export G-code');
   }
 
-  return response.text();
+  const data = await response.blob();
+  return data;
 };

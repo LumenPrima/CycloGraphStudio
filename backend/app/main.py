@@ -2,12 +2,18 @@ from flask import Flask, jsonify, request, abort, send_file
 from flask_cors import CORS
 import sys
 import os
+from io import BytesIO
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Add the parent directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.models import CyclographDesign, Pattern, Gear
-from app.utils import generate_pattern, generate_regular_polygon, generate_line
+from app.utils import generate_pattern, generate_regular_polygon, generate_line, generate_gcode
 import io
 import svgwrite
 from PIL import Image, ImageDraw
@@ -22,10 +28,10 @@ app = create_app()
 
 @app.route('/api/generate', methods=['POST'])
 def generate():
-    print("Received request to /api/generate")  # Debug print
+    logger.info("Received request to /api/generate")
     try:
         data = request.json
-        print(f"Received data: {data}")  # Debug print
+        logger.debug(f"Received data: {data}")
         
         # Extract path type (inside or outside) from the request, default to 'outside'
         path_type = data.get('path_type', 'outside')
@@ -34,12 +40,12 @@ def generate():
         pattern = generate_pattern(design, path_type=path_type)
         return jsonify(pattern.to_dict())
     except ValueError as e:
-        print(f"Error in generate: {str(e)}")  # Debug print
+        logger.error(f"Error in generate: {str(e)}")
         abort(400, description=str(e))
 
 @app.route('/api/gear/create', methods=['POST'])
 def create_gear():
-    print("Received request to /api/gear/create")  # Debug print
+    logger.info("Received request to /api/gear/create")
     try:
         data = request.json
         gear = convert_gear_data(data)
@@ -51,12 +57,12 @@ def create_gear():
             abort(400, description="Invalid gear shape")
         return jsonify({"points": points.tolist()})
     except ValueError as e:
-        print(f"Error in create_gear: {str(e)}")  # Debug print
+        logger.error(f"Error in create_gear: {str(e)}")
         abort(400, description=str(e))
 
 @app.route('/api/design/modify', methods=['PUT'])
 def modify_design():
-    print("Received request to /api/design/modify")  # Debug print
+    logger.info("Received request to /api/design/modify")
     try:
         data = request.json
         design_id = data.pop('id', None)
@@ -67,12 +73,12 @@ def modify_design():
         updated_design = convert_design_data(data)
         return jsonify(updated_design.__dict__)
     except ValueError as e:
-        print(f"Error in modify_design: {str(e)}")  # Debug print
+        logger.error(f"Error in modify_design: {str(e)}")
         abort(400, description=str(e))
 
 @app.route('/api/export/svg', methods=['POST'])
 def export_svg():
-    print("Received request to /api/export/svg")  # Debug print
+    logger.info("Received request to /api/export/svg")
     try:
         data = request.json
         design = convert_design_data(data)
@@ -93,12 +99,12 @@ def export_svg():
             download_name='cyclograph.svg'
         )
     except ValueError as e:
-        print(f"Error in export_svg: {str(e)}")  # Debug print
+        logger.error(f"Error in export_svg: {str(e)}")
         abort(400, description=str(e))
 
 @app.route('/api/export/png', methods=['POST'])
 def export_png():
-    print("Received request to /api/export/png")  # Debug print
+    logger.info("Received request to /api/export/png")
     try:
         data = request.json
         design = convert_design_data(data)
@@ -116,39 +122,57 @@ def export_png():
         
         return send_file(img_io, mimetype='image/png', as_attachment=True, download_name='cyclograph.png')
     except ValueError as e:
-        print(f"Error in export_png: {str(e)}")  # Debug print
+        logger.error(f"Error in export_png: {str(e)}")
         abort(400, description=str(e))
 
-@app.route('/api/export/gcode', methods=['POST'])
+@app.route('/api/export-gcode', methods=['POST'])
 def export_gcode():
-    print("Received request to /api/export/gcode")  # Debug print
+    logger.info("Received request to /api/export-gcode")
     try:
         data = request.json
-        design = convert_design_data(data)
+        logger.debug(f"Received data for G-code export: {data}")
+
+        # Extract design data
+        design_data = data.get('design')
+        if not design_data:
+            raise ValueError("Design data is missing")
+
+        # Convert design data to CyclographDesign object
+        design = convert_design_data(design_data)
+        logger.debug(f"Converted design: {design}")
+
+        # Extract G-code options
+        gcode_options = {
+            "start_gcode": data.get("startGcode", "G90 ; use absolute positioning\nG21 ; use mm as unit\nG0 Z3 ; raise pen"),
+            "end_gcode": data.get("endGcode", "G0 Z3 ; raise pen\nM2 ; end program"),
+            "pen_down_command": data.get("penDownCommand", "G1 Z-1 F300 ; lower a bit slower"),
+            "pen_up_command": data.get("penUpCommand", "G0 Z3"),
+            "target_width": float(data.get("targetWidth", 200.0)),
+            "target_height": float(data.get("targetHeight", 200.0)),
+            "move_speed": int(data.get("moveSpeed", 1500)),
+            "draw_speed": int(data.get("drawSpeed", 1000)),
+            "starting_corner": data.get("startingCorner", '0,0'),
+            "machine_rule": data.get("machineRule", 'right-hand')
+        }
+        logger.debug(f"G-code options: {gcode_options}")
+
+        # Generate the pattern
         pattern = generate_pattern(design)
-        
-        gcode = []
-        gcode.append("G21 ; Set units to millimeters")
-        gcode.append("G90 ; Use absolute coordinates")
-        gcode.append("G0 Z5 ; Lift pen")
-        
-        for i, point in enumerate(pattern.points):
-            x, y = point.real + 250, point.imag + 250
-            if i == 0:
-                gcode.append(f"G0 X{x:.3f} Y{y:.3f} ; Move to start position")
-                gcode.append("G0 Z0 ; Lower pen")
-            else:
-                gcode.append(f"G1 X{x:.3f} Y{y:.3f} ; Draw line")
-        
-        gcode.append("G0 Z5 ; Lift pen")
-        gcode.append("G0 X0 Y0 ; Return to origin")
-        
-        gcode_str = "\n".join(gcode)
-        
-        return gcode_str, 200, {'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename=cyclograph.gcode'}
-    except ValueError as e:
-        print(f"Error in export_gcode: {str(e)}")  # Debug print
-        abort(400, description=str(e))
+        logger.debug(f"Generated pattern with {len(pattern.points)} points")
+
+        # Generate the G-code
+        gcode_str = generate_gcode(pattern=pattern, **gcode_options)
+        logger.debug(f"Generated G-code (first 100 chars): {gcode_str[:100]}...")
+
+        # Prepare the G-code as a downloadable file
+        gcode_bytes = BytesIO(gcode_str.encode('utf-8'))
+        gcode_bytes.seek(0)
+
+        return send_file(gcode_bytes, mimetype="text/plain", as_attachment=True, download_name="pattern.gcode")
+
+    except Exception as e:
+        logger.error(f"Error in export_gcode: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 400
 
 @app.errorhandler(400)
 def bad_request(e):
@@ -179,6 +203,6 @@ def convert_design_data(data):
 
 if __name__ == '__main__':
     port = int(os.environ.get('FLASK_PORT', 5001))
-    print(f"Starting Flask app on port {port}...")  # Debug print
+    logger.info(f"Starting Flask app on port {port}...")
     app.run(debug=True, port=port)
-    print("Flask app has stopped.")  # Debug print
+    logger.info("Flask app has stopped.")

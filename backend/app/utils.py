@@ -65,3 +65,83 @@ def generate_pattern(design: CyclographDesign, path_type: str = 'outside') -> Pa
     # Convert to Pattern object
     return Pattern(points=pattern, design=design)
 
+def generate_gcode(
+    pattern,
+    start_gcode="G90 ; use absolute positioning\nG21 ; use mm as unit\nG0 Z3 ; raise pen",
+    end_gcode="G0 Z3 ; raise pen\nM2 ; end program",
+    pen_down_command="G1 Z-1 F300 ; lower a bit slower",
+    pen_up_command="G0 Z3",
+    target_width=200,
+    target_height=200,
+    move_speed=1500,
+    draw_speed=1000,
+    starting_corner='0,0',
+    machine_rule='right-hand'
+):
+    """
+    Generates G-code for the given pattern with customizable start/end blocks,
+    scaling, machine rule adjustments, and corner offset to keep coordinates positive.
+    """
+    gcode = []
+
+    # Append the start G-code block
+    gcode.append(start_gcode)
+
+    # Initialize the starting position
+    gcode.append(f"G0 F{move_speed} ; Set move speed")
+
+    # Calculate the bounding box of the pattern
+    min_x = min(p.real for p in pattern.points)
+    max_x = max(p.real for p in pattern.points)
+    min_y = min(p.imag for p in pattern.points)
+    max_y = max(p.imag for p in pattern.points)
+
+    # Calculate the width and height of the bounding box
+    pattern_width = max_x - min_x
+    pattern_height = max_y - min_y
+
+    # Calculate scaling factor to fit within target width/height
+    scale_x = target_width / pattern_width
+    scale_y = target_height / pattern_height
+    scale = min(scale_x, scale_y)  # Keep aspect ratio
+
+    # Offset to ensure positive coordinates
+    if starting_corner == '0,0':
+        offset_x = -min_x * scale
+        offset_y = -min_y * scale
+    else:  # If user wants top-right or other options, customize here
+        offset_x = target_width - (max_x * scale)
+        offset_y = target_height - (max_y * scale)
+
+    # Apply transformation based on the machine rule (right-hand or left-hand)
+    if machine_rule == 'left-hand':
+        scaled_points = [
+            (-p.real * scale + offset_x, p.imag * scale + offset_y) for p in pattern.points
+        ]
+    else:  # Default right-hand rule
+        scaled_points = [
+            (p.real * scale + offset_x, p.imag * scale + offset_y) for p in pattern.points
+        ]
+
+    # Move to the starting point without drawing
+    start_point = scaled_points[0]
+    gcode.append(f"G0 X{start_point[0]:.3f} Y{start_point[1]:.3f} ; Move to start")
+
+    # Pen down with feed rate reset
+    gcode.append(pen_down_command)
+    gcode.append(f"G1 F{draw_speed} ; Set drawing speed")
+
+    # Draw the pattern
+    for x, y in scaled_points[1:]:
+        gcode.append(f"G1 X{x:.3f} Y{y:.3f} ; Drawing point")
+
+    # Pen up with feed rate reset
+    gcode.append(pen_up_command)
+    gcode.append(f"G1 F{draw_speed} ; Reset drawing speed after pen up")
+
+    # Append the end G-code block
+    gcode.append(end_gcode)
+
+    # Combine all the G-code lines into a single string
+    return "\n".join(gcode)
+
